@@ -63,20 +63,22 @@ def test_myclass_nested():
 
 if __name__ == "__main__":
 
+    import torch
 
     @nosj
     class InnerClass:
         x: float
-        y: np.ndarray
+        y: torch.Tensor
 
     @nosj
     class MyClass:
         a: int
         b: InnerClass
+        c: torch.Tensor
 
-    inner = InnerClass(x=3.14, y=np.linspace(0,1,50))
+    inner = InnerClass(x=3.14, y=torch.linspace(0,1,50))
     inner.save('innerfile.json')
-    obj = MyClass(a=10, b=inner)
+    obj = MyClass(a=10, b=inner, c=torch.arange(20))
     obj.b = 'innerfile.json'  # simulate saving only the description
     obj.save('testfile.json')
     obj2 = MyClass.load('testfile.json', load_subclasses=True)

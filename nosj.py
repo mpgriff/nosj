@@ -16,7 +16,7 @@ from numpy.lib.format import descr_to_dtype, dtype_to_descr
 def update(self, **kwargs):
     return replace(self, **kwargs)
 
-def save(self, fname, binary_threshold=100):
+def _to_nosj(self, binary_threshold=100):
     if self.extension is not None and '.' not in fname:
         fname = fname + '.' + self.extension
     if self.extension is not None:
@@ -37,10 +37,17 @@ def save(self, fname, binary_threshold=100):
                 'shape': val.shape,
             }
             exec(f'other.{key} = array_dict')
+        elif hasattr(val, '_to_nosj'):
+            exec(f'other.{key} = val._to_nosj(binary_threshold=binary_threshold)')
+
     if not hasattr(other, '_description'):
         other._description = fname
     
-    res = json.dumps(dataclass2dict(other), indent=4)
+    return dataclass2dict(other)
+
+
+def save(self, fname, binary_threshold=100):
+    res = json.dumps(self._to_nosj(binary_threshold=binary_threshold), indent=4)
     with open(fname, 'wt') as f:
         f.write(res)
 
@@ -123,8 +130,7 @@ except ImportError:
 
 if TORCH_ENABLED:
 
-    def save(self, fname, binary_threshold=100):
-        print('saving with torch support')
+    def _to_nosj(self, binary_threshold=100):
         if self.extension is not None and '.' not in fname:
             fname = fname + '.' + self.extension
         if self.extension is not None:
@@ -134,10 +140,10 @@ if TORCH_ENABLED:
         other = self.copy()
         torch_keys = []
         for key,val in other.__dict__.items():
-            if isinstance(val, Tensor) and key in other.__annotations__:
-                torch_keys.append(key)
+            if isinstance(val, Tensor):
                 exec(f'other.{key} = val.numpy()')
-        
+                if key in other.__annotations__:
+                    torch_keys.append(key)
 
         for key,val in other.__dict__.items():
             if (hasattr(val, '_description') and val._description is not None) and (hasattr(val, 'extension') and val.extension is not None):
@@ -151,29 +157,80 @@ if TORCH_ENABLED:
                     'shape': val.shape,
                 }
                 exec(f'other.{key} = array_dict')
+            elif hasattr(val, '_to_nosj'):
+                exec(f'other.{key} = val._to_nosj(binary_threshold=binary_threshold)')                
 
         if not hasattr(other, '_description'):
             other._description = fname
         
         dictionary_rep = dataclass2dict(other)
         if len(torch_keys)>0: dictionary_rep['_torch_keys'] = torch_keys
-        res = json.dumps(dictionary_rep, indent=4)
+        return dictionary_rep
 
-        with open(fname, 'wt') as f:
-            f.write(res)
+    def reinstantiate_subclasses(cls, d, load_subclasses=False):
+        """recursive function to get attributes back into their right classes"""
+        if '_torch_keys' in d:
+            torch_keys = d.pop('_torch_keys')
+        else:
+            torch_keys = []
 
-    @classmethod
-    def load(cls, fname, load_subclasses=False):
-        with open(fname, 'rb') as f:
-            res = json.loads(f.read())
-        if '_torch_keys' in res:
-            torch_keys = res.pop('_torch_keys')
-            for key in torch_keys:
-                if isinstance(res[key], dict) and '__numpy_str__' in res[key]:
-                    res[key] = eval(res[key]['__numpy_str__']).astype(res[key]['dtype']).reshape(res[key]['shape'])
-                res[key] = from_numpy(res[key])
-        res = cls._reinstantiate_subclasses(cls, res, load_subclasses=load_subclasses)
-        return res
+        if '__numpy_str__' in d:
+            cdata = eval(d['__numpy_str__']).astype(d.pop('dtype')).reshape(d.pop('shape'))
+            if cls == Tensor: cdata = from_numpy(cdata)
+            return cdata
+        
+        if cls.__base__ != (object, str) and hasattr(cls.__base__, '__annotations__'):
+            class_dict = cls.__annotations__ | cls.__base__.__annotations__
+        else:
+            class_dict = cls.__annotations__
+
+        if hasattr(d, 'keys'):
+            for key in d.keys():
+                if class_dict[key] != type(d[key]) and type(d[key]) == dict:
+                    d[key] = reinstantiate_subclasses(class_dict[key], d[key])
+                elif isinstance(class_dict[key], _GenericAlias):
+                    subclass = [x for x in class_dict[key].__args__]
+                    if len(subclass) < len(d[key]):
+                        subclass = subclass * len(d[key])
+                    if hasattr(subclass[0], '__annotations__'):
+                        d[key] = [reinstantiate_subclasses(const, x, load_subclasses=load_subclasses) for const, x in zip(subclass,d[key])]
+                    else:
+                        d[key] = [x for const, x in zip(subclass,d[key])]
+
+                elif class_dict[key] == ndarray or class_dict[key] == Tensor:
+                    pass
+
+                elif class_dict[key] != type(d[key]) and type(d[key]) == str and '.' in d[key] and load_subclasses:
+                    d[key] = class_dict[key].load(d[key])
+                elif class_dict[key] != type(d[key]) and load_subclasses:
+                    if d[key] is not None:
+                        d[key] = class_dict[key](**d[key])
+            if len(torch_keys)>0:
+                for key in torch_keys:
+                    if isinstance(d[key], ndarray):
+                        d[key] = from_numpy(array(d[key]))
+            return cls(**d)
+
+        elif isinstance(d, str) and load_subclasses:
+            return cls.load(d)
+        else:
+            return d
+
+    # @classmethod
+    # def load(cls, fname, load_subclasses=False):
+    #     with open(fname, 'rb') as f:
+    #         res = json.loads(f.read())
+    #     if '_torch_keys' in res:
+    #         torch_keys = res.pop('_torch_keys')
+    #         for key in torch_keys:
+    #             if isinstance(res[key], dict) and '__numpy_str__' in res[key]:
+    #                 res[key] = eval(res[key]['__numpy_str__']).astype(res[key]['dtype']).reshape(res[key]['shape'])
+    #             res[key] = from_numpy(res[key])
+    #     res = cls._reinstantiate_subclasses(cls, res, load_subclasses=load_subclasses)
+    #     return res
+
+
+
 
     def __eq__(self, other):
         is_equal = hash(self) == hash(other)
@@ -201,11 +258,13 @@ def nosj(cls):
     if 'extension' not in cls.__dict__:
         cls.extension = None
     cls.update       = update
+    cls._to_nosj     = _to_nosj
     cls.__hash__     = __hash__
     cls.__eq__       = __eq__
     cls.save         = save
     cls.load         = load
     cls._reinstantiate_subclasses = reinstantiate_subclasses
     cls.copy         = copy
+    
 
     return dataclass(cls)
