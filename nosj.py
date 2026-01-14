@@ -29,6 +29,11 @@ def _to_nosj(self, binary_threshold=100):
         if (hasattr(val, '_description') and val._description is not None) and (hasattr(val, 'extension') and val.extension is not None):
             if val._description.endswith(val.extension):
                 exec(f'other.{key} = val._description')
+        elif hasattr(val, '_to_nosj'):
+            exec(f'other.{key} = val._to_nosj(binary_threshold=binary_threshold)')
+        elif isinstance(val, List) and len(val)>0:
+            new_list = [x if not hasattr(x, '_to_nosj') else x._to_nosj(binary_threshold=binary_threshold) for x in val]
+            exec(f'other.{key} = new_list')
         elif isinstance(val, ndarray) and val.size<=binary_threshold:
             descr = dtype_to_descr(val.dtype)
             array_dict = {
@@ -37,8 +42,6 @@ def _to_nosj(self, binary_threshold=100):
                 'shape': val.shape,
             }
             exec(f'other.{key} = array_dict')
-        elif hasattr(val, '_to_nosj'):
-            exec(f'other.{key} = val._to_nosj(binary_threshold=binary_threshold)')
 
     if not hasattr(other, '_description'):
         other._description = fname
@@ -125,8 +128,10 @@ def copy(self):
 try:
     from torch import allclose as torch_allclose, Tensor, from_numpy
     TORCH_ENABLED = True
+    print('torch detected, enabling torch tensor support in nosj')
 except ImportError:
     TORCH_ENABLED = False
+    print('torch not detected, skipping torch tensor support in nosj')
 
 if TORCH_ENABLED:
 
