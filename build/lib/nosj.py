@@ -71,7 +71,7 @@ def __hash__(self):
 def __eq__(self, other):
     is_equal = hash(self) == hash(other)
     if is_equal:
-        for x in self.__class__.__annotations__.keys():
+        for x in self.__annotations__.keys():
             cvar = vars(self)[x]
             ovar = vars(other)[x]
 
@@ -240,7 +240,7 @@ if TORCH_ENABLED:
     def __eq__(self, other):
         is_equal = hash(self) == hash(other)
         if is_equal:
-            for x in self.__class__.__annotations__.keys():
+            for x in self.__annotations__.keys():
                 cvar = vars(self)[x]
                 ovar = vars(other)[x]
 
