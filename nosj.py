@@ -1,4 +1,4 @@
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = ['nosj']
 
@@ -273,3 +273,8 @@ def nosj(cls):
     
 
     return dataclass(cls)
+
+# how to upload to pypi
+# 1. do a version bump in nosj.py
+# 2. run>>> python -m build
+# 3. run>>> python -m twine upload --repository pypi upload dist/nosj-<version>*
