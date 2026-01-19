@@ -1,17 +1,14 @@
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 __all__ = ['nosj']
 
 
 from dataclasses import dataclass, replace, asdict as dataclass2dict
 from typing import List, _GenericAlias
-import json
 import json_numpy
-json_numpy.patch()
 
-from numpy import ndarray, allclose, array
+from numpy import ndarray, allclose, array, inf
 from numpy.lib.format import descr_to_dtype, dtype_to_descr
-
 
 def update(self, **kwargs):
     return replace(self, **kwargs)
@@ -50,14 +47,14 @@ def _to_nosj(self, binary_threshold=100):
 
 
 def save(self, fname, binary_threshold=100):
-    res = json.dumps(self._to_nosj(binary_threshold=binary_threshold), indent=4)
+    res = json_numpy.dumps(self._to_nosj(binary_threshold=binary_threshold), indent=4)
     with open(fname, 'wt') as f:
         f.write(res)
 
 @classmethod
 def load(cls, fname, load_subclasses=False):
     with open(fname, 'rb') as f:
-        res = json.loads(f.read())
+        res = json_numpy.loads(f.read())
     res = cls._reinstantiate_subclasses(cls, res, load_subclasses=load_subclasses)
     return res
 
@@ -221,22 +218,6 @@ if TORCH_ENABLED:
         else:
             return d
 
-    # @classmethod
-    # def load(cls, fname, load_subclasses=False):
-    #     with open(fname, 'rb') as f:
-    #         res = json.loads(f.read())
-    #     if '_torch_keys' in res:
-    #         torch_keys = res.pop('_torch_keys')
-    #         for key in torch_keys:
-    #             if isinstance(res[key], dict) and '__numpy_str__' in res[key]:
-    #                 res[key] = eval(res[key]['__numpy_str__']).astype(res[key]['dtype']).reshape(res[key]['shape'])
-    #             res[key] = from_numpy(res[key])
-    #     res = cls._reinstantiate_subclasses(cls, res, load_subclasses=load_subclasses)
-    #     return res
-
-
-
-
     def __eq__(self, other):
         is_equal = hash(self) == hash(other)
         if is_equal:
@@ -277,4 +258,4 @@ def nosj(cls):
 # how to upload to pypi
 # 1. do a version bump in nosj.py
 # 2. run>>> python -m build
-# 3. run>>> python -m twine upload --repository pypi upload dist/nosj-<version>*
+# 3. run>>> python -m twine upload --repository pypi dist/nosj-<version>*
