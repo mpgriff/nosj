@@ -76,6 +76,13 @@ def __eq__(self, other):
                 continue
             elif isinstance(cvar, ndarray):
                 var_equal = allclose(cvar, ovar)
+            elif isinstance(cvar, list):
+                var_equal = True
+                for cv, ov in zip(cvar, ovar):
+                    if isinstance(cv, ndarray):
+                        var_equal = var_equal and allclose(cv, ov)
+                    else:
+                        var_equal = var_equal and (cv == ov)
             else:
                 var_equal = (cvar == ovar)
             is_equal = is_equal and var_equal
@@ -120,7 +127,8 @@ def reinstantiate_subclasses(cls, d, load_subclasses=False):
         return d
         
 def copy(self):
-    return replace(self)
+    from copy import deepcopy
+    return replace(deepcopy(self))
 
 try:
     from torch import allclose as torch_allclose, Tensor, from_numpy
@@ -144,6 +152,11 @@ if TORCH_ENABLED:
         for key,val in other.__dict__.items():
             if isinstance(val, Tensor):
                 exec(f'other.{key} = val.numpy()')
+                if key in other.__annotations__:
+                    torch_keys.append(key)
+            elif isinstance(val, List) and len(val)>0 and isinstance(val[0], Tensor):
+                new_list = [x.numpy() for x in val]
+                exec(f'other.{key} = new_list')
                 if key in other.__annotations__:
                     torch_keys.append(key)
 
@@ -190,6 +203,8 @@ if TORCH_ENABLED:
             for key in d.keys():
                 if class_dict[key] != type(d[key]) and type(d[key]) == dict:
                     d[key] = reinstantiate_subclasses(class_dict[key], d[key])
+                elif d[key] is None:
+                    pass
                 elif isinstance(class_dict[key], _GenericAlias):
                     subclass = [x for x in class_dict[key].__args__]
                     if len(subclass) < len(d[key]):
@@ -211,6 +226,8 @@ if TORCH_ENABLED:
                 for key in torch_keys:
                     if isinstance(d[key], ndarray):
                         d[key] = from_numpy(array(d[key]))
+                    elif isinstance(d[key], list):
+                        d[key] = [from_numpy(array(x)) for x in d[key]]
             return cls(**d)
 
         elif isinstance(d, str) and load_subclasses:
@@ -231,6 +248,15 @@ if TORCH_ENABLED:
                     var_equal = allclose(cvar, ovar)
                 elif isinstance(cvar, Tensor):
                     var_equal = torch_allclose(cvar, ovar)
+                elif isinstance(cvar, list):
+                    var_equal = True
+                    for cv, ov in zip(cvar, ovar):
+                        if isinstance(cv, ndarray):
+                            var_equal = var_equal and allclose(cv, ov)
+                        elif isinstance(cv, Tensor):
+                            var_equal = var_equal and torch_allclose(cv, ov)
+                        else:
+                            var_equal = var_equal and (cv == ov)
                 else:
                     var_equal = (cvar == ovar)
                 is_equal = is_equal and var_equal
@@ -243,14 +269,18 @@ def nosj(cls):
     cls._description = cls.__name__.split('.')[-1]
     if 'extension' not in cls.__dict__:
         cls.extension = None
-    cls.update       = update
+    
     cls._to_nosj     = _to_nosj
-    cls.__hash__     = __hash__
-    cls.__eq__       = __eq__
-    cls.save         = save
-    cls.load         = load
     cls._reinstantiate_subclasses = reinstantiate_subclasses
-    cls.copy         = copy
+
+    cls.__hash__ = __hash__
+    cls.__eq__   = __eq__
+    cls.copy     = copy
+    cls.update   = update
+    if not hasattr(cls, 'save'):     cls.save     = save
+    if not hasattr(cls, 'load'):     cls.load     = load
+    # if not hasattr(cls, 'update'):   cls.update   = update
+    # if not hasattr(cls, 'copy'):     
     
 
     return dataclass(cls)
