@@ -123,6 +123,6 @@ if __name__ == "__main__":
     # obj3 = MyClass.load('testfile.json', load_subclasses=False)
 
     #test_list_of_arrays()
-    test_list_of_tensors()
+    # test_list_of_tensors()
 
     # from torch import Tensor
